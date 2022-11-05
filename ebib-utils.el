@@ -2023,6 +2023,108 @@ See the BibLaTeX manual, section 3.13.6 for more details."
   :type '(alist :key-type (repeat :tag "Fields" string)
 		:value-type (regexp :tag "Separator regexp")))
 
+(defun ebib--granular-xdata-completion-function (string pred flag)
+  "Completion table function for editing granular xdata entries.
+Arguments are as standard for completion tables.
+
+This function offers a list of @XData entry keys from the current
+db, or a list of fields in the relevant entry, or a list of index
+numbers for the elements of a field's value, depending on input.
+Field/index completions are annotated with the values of those fields,
+in that entry."
+  (let* ((data
+	  ;; Simple parser for granular xdata entries
+	  (cl-loop for ltr across string
+		   with buff = ""
+		   with last-boundary = 0
+		   with part = nil
+		   with key with field
+		   do (setq buff (concat buff (char-to-string ltr)))
+		   if part
+		     when (eq ltr ?-)
+		     do (progn
+			  (pcase part
+			    ('key
+			     (setq part 'field
+				   key (substring buff last-boundary -1)))
+			    ('field
+			     (setq part 'index
+				   field (substring buff last-boundary -1)))
+			    ('index
+			     (setq part nil)))
+			  (when (eq part 'index))
+			  (setq last-boundary (length buff)))
+		     end
+		   else
+		     when (string-match-p (rx bos "xdata=") buff)
+		     do (setq part 'key
+			      last-boundary 6)
+		     end
+		   end
+		   finally return
+		   `(:key ,key
+		     :field ,field
+		     :part ,part
+	             :string-boundary ,last-boundary)))
+	 ;; When there is annotatable information, COLLECTION is an
+	 ;; alist of (VALUE . ANNOT) pairs.
+	 (collection
+	  (pcase (plist-get data :part)
+	    ('key (seq-filter
+		   (lambda (key)
+		     (cl-equalp
+		      "xdata"
+		      (ebib-db-get-field-value "=type=" key ebib--cur-db 'noerror)))
+		   (ebib--list-keys)))
+	    ('field
+	     (cl-delete-if-not (lambda (x) (not (member (car x) '("=type=" "=key="))))
+			       (ebib-get-entry (plist-get data :key) ebib--cur-db)))
+	    ('index
+	     (when-let ((field (plist-get data :field))
+			(split-rgx (cdr (assoc field ebib-indexable-fields
+					       (lambda (l k) (member k l)))))
+			(field-val
+			 (ebib-get-field-value
+			  field (plist-get data :key) ebib--cur-db
+			  nil 'unbraced 'xref 'expand-strings)))
+	       (seq-map-indexed (lambda (elt idx) `(,(number-to-string (1+ idx)) . ,elt))
+				(split-string field-val split-rgx t "[[:space:]]"))))))
+	 (string-boundary (plist-get data :string-boundary))
+	 (string-part (substring string string-boundary)))
+    (pcase flag
+      ('nil
+       (let ((try (try-completion string-part collection pred)))
+	 (if (booleanp try)
+	     try
+	   (concat (substring string 0 string-boundary) try))))
+      ('t (all-completions string-part collection pred))
+      ('lambda (test-completion string-part collection pred))
+      ;; Boundaries
+      ((and (pred consp)
+	    (app car 'boundaries))
+       (let ((suffix-boundary (or (string-match-p "-" (cdr flag))
+				  (length (cdr flag)))))
+	 `(boundaries ,string-boundary . ,suffix-boundary)))
+      ;; Metadata
+      ('metadata
+       `(metadata
+	 (annotation-function
+	  . ,(lambda (str)
+	       (when-let ((val (assoc-string str collection))
+			  (_ (consp val))
+			  (annot (ebib-unbrace (cdr val)))
+			  (propertized (propertize annot 'face '(italic ebib-crossref-face))))
+		 (format " %s" propertized))))
+	 ;; Ensure that Indexes are sorted correctly (overiding clever
+	 ;; completion frameworks which sort more recently used items
+	 ;; first -- the index position is important, and its position
+	 ;; in the completion is a good way to show that)
+	 ,@(when (eq (plist-get data :part) 'index)
+	     `((display-sort-function
+		. (lambda (list) (sort list (lambda (a b)
+					 (< (string-to-number a)
+					    (string-to-number b)))))))))))))
+
 (defun ebib--get-xref-alist (key db)
   "Return alist of crossreferencing keys in entry KEY, in DB.
 Only keys entered as values in the crossref, xdata and xref
