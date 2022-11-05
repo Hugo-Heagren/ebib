@@ -2002,6 +2002,27 @@ If unsuccessful, text is propertized appropriately:
 		  (t (propertize xdata-value 'ebib--xref xdata-key)))))))))
     (replace-regexp-in-string xdata-regexp get-xdata-function string)))
 
+(defcustom ebib-indexable-fields `((("afterword" "annotator" "author" "bookauthor"
+				     "commentator" "editor" "editora" "editorb"
+				     "editorc" "foreword" "holder" "institution"
+				     "introduction" "organization" "origpublisher"
+				     "publisher" "sortname" "translator")
+				    . "and")
+				   (("entryset" "keywords" "related" "xdata")
+				    . ",")
+				   (("file") . ,(string-trim ebib-filename-separator)))
+  "List of fields which can be index in a granular xdata reference.
+Each entry's car is a list of fields, and the cdr is a regexp of
+the separator to split values of those fields into lists (the
+regexp should be without leading/trailing whitespace).
+
+Principally used in `ebib--granular-xdata-completion-function'.
+
+See the BibLaTeX manual, section 3.13.6 for more details."
+  :group 'ebib
+  :type '(alist :key-type (repeat :tag "Fields" string)
+		:value-type (regexp :tag "Separator regexp")))
+
 (defun ebib--get-xref-alist (key db)
   "Return alist of crossreferencing keys in entry KEY, in DB.
 Only keys entered as values in the crossref, xdata and xref
