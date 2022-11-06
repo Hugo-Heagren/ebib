@@ -229,7 +229,7 @@ If MARK is non-nil, `ebib-mark-face' is applied to the entry."
           (insert (format "%-17s %s"
                           (propertize field 'face 'ebib-field-face)
                           (ebib--get-field-highlighted field (ebib--get-key-at-point)))))
-        (beginning-of-line)))))
+        (beginning-of-line))))
 
 (defun ebib--redisplay-current-field ()
   "Redisplay the contents of the current field in the entry buffer."
